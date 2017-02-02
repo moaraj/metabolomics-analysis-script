@@ -80,127 +80,6 @@ library(tibble)
 library(heplots)
 ```
 
-Function for Splitting columns based on substring
-```{r}
-cSplit <- function(indt, splitCols, sep = ",", direction = "wide", 
-                   makeEqual = NULL, fixed = TRUE, drop = TRUE, 
-                   stripWhite = FALSE) {
-  message("`cSplit` is now part of the 'splitstackshape' package (V1.4.0)")
-  ## requires data.table >= 1.8.11
-  require(data.table)
-  if (!is.data.table(indt)) setDT(indt)
-  if (is.numeric(splitCols)) splitCols <- names(indt)[splitCols]
-  if (any(!vapply(indt[, splitCols, with = FALSE],
-                  is.character, logical(1L)))) {
-    indt[, eval(splitCols) := lapply(.SD, as.character),
-         .SDcols = splitCols]
-  }
-  
-  if (length(sep) == 1) 
-    sep <- rep(sep, length(splitCols))
-  if (length(sep) != length(splitCols)) {
-    stop("Verify you have entered the correct number of sep")
-  }
-
-  if (isTRUE(stripWhite)) {
-    indt[, eval(splitCols) := mapply(function(x, y) 
-      gsub(sprintf("\\s+%s\\s+|\\s+%s|%s\\s+", 
-                   x, x, x), x, y), 
-      sep, indt[, splitCols, with = FALSE], 
-      SIMPLIFY = FALSE)]
-  }  
-  
-  X <- lapply(seq_along(splitCols), function(x) {
-    strsplit(indt[[splitCols[x]]], split = sep[x], fixed = fixed)
-  })
-  
-  if (direction == "long") {
-    if (is.null(makeEqual)) {
-      IV <- function(x,y) if (identical(x,y)) TRUE else FALSE
-      makeEqual <- ifelse(Reduce(IV, rapply(X, length, how = "list")),
-                          FALSE, TRUE)
-    }
-  } else if (direction == "wide") {
-    if (!is.null(makeEqual)) {
-      if (!isTRUE(makeEqual)) {
-        message("makeEqual specified as FALSE but set to TRUE")
-        makeEqual <- TRUE
-      }
-      makeEqual <- TRUE
-    } else {
-      makeEqual <- TRUE
-    }
-  }
-  if (isTRUE(makeEqual)) {
-    SetUp <- lapply(seq_along(X), function(y) {
-      A <- vapply(X[[y]], length, 1L)
-      list(Mat = cbind(rep(seq_along(A), A), sequence(A)),
-           Val = unlist(X[[y]]))
-    })    
-    Ncol <- max(unlist(lapply(SetUp, function(y) y[["Mat"]][, 2]), 
-                       use.names = FALSE))
-    X <- lapply(seq_along(SetUp), function(y) {
-      M <- matrix(NA_character_, nrow = nrow(indt), ncol = Ncol)
-      M[SetUp[[y]][["Mat"]]] <- SetUp[[y]][["Val"]]
-      M
-    })
-    if (direction == "wide") {
-      X <- lapply(seq_along(X), function(x) {
-        colnames(X[[x]]) <- paste(splitCols[x], 
-                                  sequence(ncol(X[[x]])), 
-                                  sep = "_")
-        X[[x]]
-      })
-      if (isTRUE(drop)) {
-        cbind(indt, do.call(cbind, X))[, eval(splitCols) := NULL][]
-      } else {
-        cbind(indt, do.call(cbind, X))
-      }
-    } else {
-      indt <- indt[rep(sequence(nrow(indt)), each = Ncol)]
-      X <- lapply(X, function(y) as.vector(t(y)))
-      indt[, eval(splitCols) := lapply(X, unlist, use.names = FALSE)][]
-    }  
-  } else {
-    Rep <- vapply(X[[1]], length, integer(1L))
-    indt <- indt[rep(sequence(nrow(indt)), Rep)]
-    indt[, eval(splitCols) := lapply(X, unlist, use.names = FALSE)][]
-  }
-}
-```
-
-Import the Annotated files into R and perform the condition groups
-```{r, eval=FALSE}
-
-#View(Data_Curated_Annotations)
-
-#Parses Meta Data in File
-meta_data_vector <- cSplit(as.data.frame(names(Data_Curated_Annotations))
-                           ,"names(Data_Curated_Annotations)", " ")
-meta_data_vector$`names(Data_Curated_Annotations)_2` <- NULL
-names(meta_data_vector) <- c("index", "extraction", "mouse_id", "diet_id", "sex")
-
-#Makes Labels for MetaData and ions
-meta_levels <- c("index", "extraction", "mouse_id", "diet_id", "sex")
-ionMz <- as.character(Data_Curated_Annotations$ionMz) 
-metab_data_names <- c(meta_levels, ionMz)
-
-#Transpose Data Frame
-
-#removes the first three rows and sets ion mass as column nam
-metab_data <- t(Data_Curated_Annotations)
-metab_data <- data.frame(meta_data_vector, metab_data)
-row.names(metab_data) <- NULL
-
-names(metab_data) <- metab_data_names
-metab_data <- metab_data [-c(1,2,3),]
-
-#Covert Data Frame to numeric
-metab_data <-lapply(metab_data[6:length(names(metab_data))], function(x) as.numeric(x))
-metab_data <- data.frame(meta_data_vector[-c(1:3)], metab_data)
-
-```
-
 Import Annotated Files, Tranposed, all commas, spaces and semi colons removed in notepad++. 
 INSERT "index, extraction, mouse, diet, sex," to first row
 
@@ -223,24 +102,7 @@ sample_mean <-lapply(metab_data[6:length(names(metab_data))], function(x) mean(x
 p <- ggplot(metab_data, aes(factor(extraction), mouse ))
 p + geom_violin() + geom_boxplot(width=.1)
 
-  
 extraction <- metab_data[metab_data$extraction %in% "H1",]
-
-
-```
-
-Generate Table to compare Chow and High Fat Diet metabolites
-Script for extracting just cohort subsets
-```{r}
-#Exctraction Cohorts
-Hot_data  <- filter(metab_data,extraction == "Hot") %>% filter(sex == "F")
-H1_data   <- filter(metab_data,extraction == "H1") %>% filter(sex == "F")
-H24_data  <- filter(metab_data,extraction == "H24") %>% filter(sex == "F")
-NH24_data <- filter(metab_data,extraction == "NH24") %>% filter(sex == "F")
-
-#Diet Cohorts
-HF_data <- filter(metab_data, diet == "HF") %>% filter(sex == "F")
-CD_data <- filter(metab_data, diet == "CD") %>% filter(sex == "F")
 ```
 
 Add indexes for replicaites using the mod function on the sample index
@@ -286,7 +148,7 @@ final_metab_data <- filtered_metab_data %>% setnames(filtered_primary_meta_names
 #Set up variables for the aov analysis
 metab <- final_metab_data
 
-counts <- log(as.matrix(metab[6:10]))
+counts <- as.matrix(log(metab[7:20]))
 #extraction  <- metab$extraction
 #mouse   <- metab$mouse
 #diet    <- metab$diet
@@ -303,7 +165,7 @@ Anova(metab.mod, test.statistic="Roy")
 summary(fit)
 summary(fit2)
 
-plot(fit,which = 1:6)
+plot(fit,which = 1:2)
 plot(fit2, which = 1:6)
 
 p <- ggplot(metab_data, aes(x = diet, y = metab_data$Pyruvaldehyde)) +
@@ -313,14 +175,39 @@ p <- ggplot(metab_data, aes(x = diet, y = metab_data$Pyruvaldehyde)) +
 
 ```
 
+Generate Table to compare Chow and High Fat Diet metabolites
+Script for extracting just cohort subsets
+```{r}
+#Exctraction Cohorts
+Hot_data  <- filter(final_metab_data,extraction == "Hot") %>% filter(sex == "F")
+H1_data   <- filter(final_metab_data,extraction == "H1") %>% filter(sex == "F")
+H24_data  <- filter(final_metab_data,extraction == "H24") %>% filter(sex == "F")
+NH24_data <- filter(final_metab_data,extraction == "NH24") %>% filter(sex == "F")
+
+#Diet Cohorts
+HF_data <- filter(final_metab_data, diet == "HF") %>% filter(sex == "F")
+CD_data <- filter(final_metab_data, diet == "CD") %>% filter(sex == "F")
+
+#Replicate Cohorts
+rep_1_data <- filter(final_metab_data, replicate == "rep_1") %>% filter(sex == "F")
+rep_2_data <- filter(final_metab_data, replicate == "rep_2") %>% filter(sex == "F")
+
+
+```
 
 Violin Plots for the Metabolite Cohorts
 ```{r}
-HF_mean <-lapply(HF_data[6:length(names(HF_data))], function(x) mean(x))
-CD_mean <-lapply(CD_data[6:length(names(CD_data))], function(x) mean(x))
+HF_mean <-lapply(HF_data[7:length(names(HF_data))], function(x) mean(x))
+CD_mean <-lapply(CD_data[7:length(names(CD_data))], function(x) mean(x))
 
-HF_sd <-lapply(HF_data[6:length(names(HF_data))], function(x) sd(x))
-CD_sd <-lapply(HF_data[6:length(names(HF_data))], function(x) sd(x))
+HF_sd <-lapply(HF_data[7:length(names(HF_data))], function(x) sd(x))
+CD_sd <-lapply(HF_data[7:length(names(HF_data))], function(x) sd(x))
+
+HF_CV <-lapply(HF_data[7:length(names(HF_data))], function(x) sd(x)/mean(x))
+CD_CV <-lapply(CD_data[7:length(names(CD_data))], function(x) sd(x)/mean(x))
+
+rep_1_data <-lapply(rep_1_data[7:length(names(rep_1_data))], function(x) sd(x)/mean(x))
+rep_2_data <-lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean(x))
 
 Diet_data <- data.frame(as.numeric(HF_mean), as.numeric(CD_mean))
 names(Diet_data) <- c("HF_mean","CD_mean")
@@ -330,83 +217,6 @@ metab_data <- melt(Diet_data, id="Index")
 
 q <- ggplot(metab_data, aes(factor(variable), log(value)))
 q + geom_violin() + geom_boxplot(width=.1)
-```
-
-compare the technical replicates
-```{r}
-
-
-#x <- metab_data[metab_data$mouse == 1037,]
-#y <- [x$extraction == "H1",]
-#z <- x[x$extraction == "H1",]
-
-qqplot(as.numeric(z[1,6:length(z)]),as.numeric(z[2,6:length(z)]))
-abs_diff <- colDiffs(as.matrix(z[,6:length(z)]))
-t.test(as.numeric(z[1,6:ncol(z)]),as.numeric(z[2,6:ncol(z)]))
-
-
-mouse_levels <- levels(metab_data$mouse)
-extraction_levels <- levels(metab_data$extraction)
-diet_levels <- levels(metab_data$diet)
-
-stat_df <- data.frame(
-     first_condition = character(),
-     second_condition = character(),
-     t_test = numeric(),
-     stringsAsFactors = FALSE
-                 )
-
-for(i in 1:length(mouse_levels))   {
-     x <- mouse_levels[i]
-     print(i)
-     
-     for (j in 1:length(extraction_levels)){
-          y <- extraction_levels[j]
-          z <- filter(metab_data, mouse==x) %>% filter(extraction == y)
-          
-          if (nrow(z)==2)          {
-               xx <- c(mouse_levels[i],(extraction_levels[j]))
-               t_test_result  <- t.test(as.numeric(z[1,6:ncol(z)]),
-                                        as.numeric(z[2,6:ncol(z)]))
-               
-               result_vector <- c(xx,t_test_result$p.value)
-               
-               abs_diff <- colDiffs(as.matrix(z[,6:length(z)]))
-               result_vector <- c(result_vector, abs_diff)
-
-               stat_df <- rbind(stat_df, result_vector)
-               
-               }
-          
-          else if (nrow(z) == 0)   {
-               xx <- c(as.character(mouse_levels[i]),
-                       as.character(extraction_levels[j]))
-               length(xx) <- ncol(z)
-               stat_df <- rbind(stat_df, xx)
-               }
-               }
-               }
-
-
-```
-
-Get the Mean reading of each metabolite and visualize in a box plot
-```{r}
-#Last row has a classifier and the rowMeans operation must be done on numeric columns
-metab_data[,"Mean"] <- rowMeans(metab_data[,6:ncol(metab_data)-1])
-
-# Name[ row, column ] - Roq SD Funtions
-st_dev <- vector(mode = "numeric", length = (nrow(metab_data)-1))
-for(i in 6:nrow(metab_data)) {
-  st_dev[i] <- sd(Hot_data[i,1:ncol(Hot_data)])
-}
-
-Hot_data[,"ST Dev"] <- st_dev
-
-df <- data.frame(annotation_file$Primary.Name,annotation_file$ionMz, Hot_data, Hot_data$`ST Dev`)
-names(df) <- c("Name","ionMZ","Mean", "SD")
-
-df2 <- df %>% arrange(Mean)
 ```
 
 
