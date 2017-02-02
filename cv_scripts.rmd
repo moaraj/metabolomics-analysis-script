@@ -8,7 +8,7 @@ output:
 ---
 
 Generate a Visual Basic Script that can convert xls and xlsx files into csv in local directory 
-xls files are notoriously difficult to handle in R, csv conversion allows low memory
+xls files are notoriously difficult to handle in R, csv conver              bvby~7En*UtG%y~7En*UtG%y~7En*UtG%sion allows low memory
 
 ```{r setup,}
 #setwd("D:/Dropbox/Aging BXD Study/D _ Metabolomics/D _ Protocol Optimization/CV Calcs")
@@ -78,6 +78,8 @@ library(splitstackshape)
 library(matrixStats)
 library(tibble)
 library(heplots)
+library(sm)
+library(vioplot)
 ```
 
 Import Annotated Files, Tranposed, all commas, spaces and semi colons removed in notepad++. 
@@ -91,18 +93,6 @@ Data_Curated_Annotations_transpose <- read_csv("Data_Curated_Annotations_transpo
 metab_data <- Data_Curated_Annotations_transpose %>% dplyr::mutate_each_(., funs = funs(as.factor), vars = c("extraction", "diet", "sex", "mouse")) 
 
 
-```
-
-Get the Mean reading of each metabolite and visualize in a box plot
-```{r, message=FALSE, warning=FALSE}
-
-sample_sd <-lapply(metab_data[6:length(names(metab_data))], function(x) sd(x))
-sample_mean <-lapply(metab_data[6:length(names(metab_data))], function(x) mean(x))
-
-p <- ggplot(metab_data, aes(factor(extraction), mouse ))
-p + geom_violin() + geom_boxplot(width=.1)
-
-extraction <- metab_data[metab_data$extraction %in% "H1",]
 ```
 
 Add indexes for replicaites using the mod function on the sample index
@@ -146,37 +136,61 @@ filtered_primary_meta_names <- primary_meta_names[-duplicated_cols]
 final_metab_data <- filtered_metab_data %>% setnames(filtered_primary_meta_names)
 
 #Set up variables for the aov analysis
-metab <- final_metab_data
 
-counts <- as.matrix(log(metab[7:20]))
+counts <- as.matrix(log(metab[7]))
 #extraction  <- metab$extraction
 #mouse   <- metab$mouse
 #diet    <- metab$diet
 #sex     <- metab$sex
 #replicate <- metab$replicate
   
-fit <- aov(formula = as.formula("counts ~ sex + diet + extraction + replicate"), data = metab)
+fit <- aov(formula = as.formula("counts ~ diet + replicate + extraction + sex"), data = filtered_metab_data)
 fit2 <- glm(formula = as.formula("counts ~ sex + diet + extraction + replicate"), data = metab)
 
-metab.mod <- lm(as.matrix(metab[7:10]) ~ sex + diet, data=metab)
+Tukey.fit <- TukeyHSD(fit, conf.level = 0.95)
+
+#Run AOV using HEPlot package
+metab.mod <- lm(as.matrix(metab[7]) ~ sex + diet, data=metab)
 Anova(metab.mod, test.statistic="Roy")
 
-
-summary(fit)
+#Get the Summary Table of the Fit
+fit_summary <- summary(fit)
 summary(fit2)
 
+#Plot Graphs for the metabolite fits
 plot(fit,which = 1:2)
 plot(fit2, which = 1:6)
 
-p <- ggplot(metab_data, aes(x = diet, y = metab_data$Pyruvaldehyde)) +
-  geom_boxplot(fill = "grey80", colour = "blue") +
-  scale_x_discrete() + xlab("Treatment Group") +
-  ylab("Log Metabolite Intensities")
+#Pair wise test to see if gender and sex cohorts make a significant difference
+pairwise.t.test(as.matrix(metab[7]), g = sex ,p.adjust.method = "bonferroni")
+
+#Try the AOV on a smaller subset of the data for just the NH24 extraction
+NH24_data <- filter(final_metab_data,extraction == "NH24") %>% filter(sex == "F")
+counts <- as.matrix(log(NH24_data[7:329]))
+fit <- aov(formula = as.formula("counts ~ diet + replicate + mouse"), data = NH24_data)
+
+fit_summary <- summary(fit)
+fit_summary_table <- sapply(fit_summary[1:length(fit_summary)], function(x) cbind.data.frame(x))
+
+NH24_f_value <- cbind.data.frame(fit_summary_table["F value",])
+NH24_f_value <- y[-4,]
+NH24_pr_f <- cbind.data.frame(fit_summary_table["Pr(>F)",])
+NH24_pr_f <- z[-4,]
+
+row.names(NH24_f_value) <- c("diet", "replicate", "mouse")
+row.names(NH24_pr_f) <- c("diet", "replicate", "mouse")
+
+NH24_pr_f_transpose <- t(NH24_pr_f)
+
+alpha <- 0.05
+n_tests <- nrow(NH24_pr_f_transpose)
+bonf_correction <- alpha/n_tests
+
 
 ```
 
 Generate Table to compare Chow and High Fat Diet metabolites
-Script for extracting just cohort subsets
+Script for extracting just cohort subsets for convienceie use anywhere in the analysis
 ```{r}
 #Exctraction Cohorts
 Hot_data  <- filter(final_metab_data,extraction == "Hot") %>% filter(sex == "F")
@@ -197,25 +211,33 @@ rep_2_data <- filter(final_metab_data, replicate == "rep_2") %>% filter(sex == "
 
 Violin Plots for the Metabolite Cohorts
 ```{r}
-HF_mean <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) mean(x)))
-CD_mean <-as.numeric(lapply(CD_data[7:length(names(CD_data))], function(x) mean(x)))
+HF_mean <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) mean((x))))
+CD_mean <-as.numeric(lapply(CD_data[7:length(names(CD_data))], function(x) mean((x))))
 
-HF_sd <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) sd(x)))
-CD_sd <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) sd(x)))
+HF_sd <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) sd((x))))
+CD_sd <-as.numeric(lapply(CD_data[7:length(names(CD_data))], function(x) sd((x))))
 
-HF_CV <-HF_sd/HF_mean 
-CD_CV <-CD_sd/CD_mean
+Hot_CV  <- as.numeric(lapply(Hot_data[7:ncol(Hot_data)], function(x) sd(x)/mean((x))*100))
+H1_CV   <- as.numeric(lapply(H1_data[7:ncol(H1_data)], function(x) sd(x)/mean((x))*100))
+H24_CV  <- as.numeric(lapply(H24_data[7:ncol(H24_data)], function(x) sd(x)/mean((x))*100))
+NH24_CV <- as.numeric(lapply(NH24_data[7:ncol(NH24_data)], function(x) sd(x)/mean((x))*100))
+Extraction_CV <- cbind(Hot_CV,H1_CV,H24_CV,NH24_CV)
 
-rep_1_data <-as.numeric(lapply(rep_1_data[7:length(names(rep_1_data))], function(x) sd(x)/mean(x)))
-rep_2_data <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean(x)))
 
-Diet_data <- data.frame(HF_CV,CD_CV)
-names(Diet_data) <- c("HF_cv","CD_cv")
-Diet_data$Index <- 1:nrow(Diet_data)
+CD_CV <-as.numeric (
+        lapply     ( filter(CD_data, CD_data$extraction == "NH24")[7:length(names(rep_1_data))], 
+        function(x) sd(x)/mean((x))*100 
+                    ))
 
-metab_data <- melt(Diet_data, id="Index")
+HF_CV <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean((x))*100))
+Diet_CV <- cbind(CD_CV,HF_CV)
 
-q <- ggplot(metab_data, aes(factor(variable), log(value)))
+rep_1_CV <-as.numeric(lapply(rep_1_data[7:length(names(rep_1_data))], function(x) sd(x)/mean((x))*100))
+rep_2_CV <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean((x))*100))
+Rep_cv <- cbind(rep_1_CV,rep_2_CV) 
+
+
+q <- ggplot(cbing(), aes(factor(variable), log(value)))
 q + geom_violin() + geom_boxplot(width=.1) 
 # violin plot with median points
 
@@ -223,98 +245,5 @@ vioplot2(Hot_data)
 ```
 
 
-Load libraries and generate the data
-```{r}
-library('broom')
-library('dplyr')
-library('ggplot2')
-library('tidyr')
-
-set.seed(20160229)
-
-my_data = data.frame(
-    # dependent variable
-    dv=c(rnorm(1000), rnorm(1000, 0.5), rnorm(1000, 1), rnorm(1000, 1.5)),
-
-    # x-axis grouping variable
-    x_group=c(rep('a', 2000), rep('b', 2000)),
-
-    # variable to use to split the violins
-    m=c(rep('i', 1000), rep('j', 2000), rep('i', 1000))
-)
-```
-
-Get the group levels for the split variable
-
-```{r}
-splits = unique(my_data[['m']])
-```
-
-Calculate and scale group densities
-I'm rescaling the density curves so that they all have the same peak height and don't overlap. Edit the mutate() line if you want to have the density polygons be different sizes (e.g., scaled so that they show the relative amount of data in each group).
-```{r}
-pdat = my_data %>%
-    group_by(x_group, m) %>%
-    do(tidy(density(.[['dv']]))) %>%
-    rename(loc = x, dens = y) %>%
-    mutate(dens = 0.5 * dens / max(dens)) %>%
-    ungroup()
-```
-
-
-Calculate summary statistics in a separate dataframe
-
-If you need more summary statistics, add new variables to the summarise() call here, and add the additional variable names to the gather() call.
-```{r}
-sums = my_data %>%
-    group_by(x_group, m) %>%
-    summarise(lquart_loc = quantile(dv)[[2]],
-              uquart_loc = quantile(dv)[[4]]) %>%
-    ungroup() %>%
-    gather(segment, loc_sum, lquart_loc, uquart_loc)
-```
-
-Calculate the corresponding points on each group's density curve
-
-To do this, I'm taking the scaled density curves stored in pdat, then feeding them into the approx() function, plus the y-axis locations of the summary statistics (loc_sum), to get the corresponding x-axis values for the summary statistics.
-```{r}
-sums = left_join(pdat, sums, by=c('x_group', 'm')) %>%
-    group_by(x_group, m) %>%
-    do(data.frame(loc = unique(.$loc_sum),
-                  dens = approx(.$loc, .$dens, unique(.$loc_sum))[['y']])) %>%
-    ungroup()
-```
-
-Create a vector of offsets with each x-axis group's coordinate
-```{r}
-offsets = unique(my_data[['x_group']]) %>% {setNames(0:(length(.) - 1), .)}
-
-```
-
-Offset the densities and summary statistics
-Modify pdat and sums to add offset_dens columns, which are the density curve values offset by the x-axis group. Also, for the groups that are on the left side of the split violins, invert the densities
-
-```{r}
-pdat = pdat %>%
-    mutate(offset_dens = offsets[.[['x_group']]] + ifelse(.[['m']] == splits[1], -dens, dens))
-
-sums = sums %>%
-    mutate(offset = offsets[.[['x_group']]],
-           offset_dens = offset + ifelse(.[['m']] == splits[1], -dens, dens))
-```
-
-Plot
-```{r}
-ggplot(pdat, aes(offset_dens, loc, fill = m,
-                 group = interaction(pdat[['x_group']], pdat[['m']]))) +
-    geom_polygon() +
-    geom_segment(data=sums, aes(x = offset, y = loc,
-                                xend = offset_dens, yend = loc),
-                 inherit.aes=FALSE) +
-    scale_x_continuous(name = 'x_group',
-                       breaks = unname(offsets),
-                       labels = names(offsets)) +
-    ylab('dv')
-```
 
 
