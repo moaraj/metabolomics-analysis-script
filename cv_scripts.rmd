@@ -133,7 +133,7 @@ ANOVA fit
 Data_Annotations    <- read.csv(file = "Data_Curated_Annotations.csv",stringsAsFactors = FALSE)
 primary_names       <- Data_Annotations$Primary.Name
 meta_data           <- c("index","replicate","extraction","mouse","diet","sex")
-primary_meta_names       <- c(meta_data, primary_names)
+primary_meta_names  <- c(meta_data, primary_names)
 
 #names(metab_data)   <- primary_meta_names
 #duplicated_colnames <- which(duplicated(primary_meta_names,fromLast = FALSE))
@@ -197,28 +197,124 @@ rep_2_data <- filter(final_metab_data, replicate == "rep_2") %>% filter(sex == "
 
 Violin Plots for the Metabolite Cohorts
 ```{r}
-HF_mean <-lapply(HF_data[7:length(names(HF_data))], function(x) mean(x))
-CD_mean <-lapply(CD_data[7:length(names(CD_data))], function(x) mean(x))
+HF_mean <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) mean(x)))
+CD_mean <-as.numeric(lapply(CD_data[7:length(names(CD_data))], function(x) mean(x)))
 
-HF_sd <-lapply(HF_data[7:length(names(HF_data))], function(x) sd(x))
-CD_sd <-lapply(HF_data[7:length(names(HF_data))], function(x) sd(x))
+HF_sd <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) sd(x)))
+CD_sd <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) sd(x)))
 
-HF_CV <-lapply(HF_data[7:length(names(HF_data))], function(x) sd(x)/mean(x))
-CD_CV <-lapply(CD_data[7:length(names(CD_data))], function(x) sd(x)/mean(x))
+HF_CV <-HF_sd/HF_mean 
+CD_CV <-CD_sd/CD_mean
 
-rep_1_data <-lapply(rep_1_data[7:length(names(rep_1_data))], function(x) sd(x)/mean(x))
-rep_2_data <-lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean(x))
+rep_1_data <-as.numeric(lapply(rep_1_data[7:length(names(rep_1_data))], function(x) sd(x)/mean(x)))
+rep_2_data <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean(x)))
 
-Diet_data <- data.frame(as.numeric(HF_mean), as.numeric(CD_mean))
-names(Diet_data) <- c("HF_mean","CD_mean")
-Diet_data$Index <- 1:length(CD_mean)
+Diet_data <- data.frame(HF_CV,CD_CV)
+names(Diet_data) <- c("HF_cv","CD_cv")
+Diet_data$Index <- 1:nrow(Diet_data)
 
 metab_data <- melt(Diet_data, id="Index")
 
 q <- ggplot(metab_data, aes(factor(variable), log(value)))
-q + geom_violin() + geom_boxplot(width=.1)
+q + geom_violin() + geom_boxplot(width=.1) 
+# violin plot with median points
+
+vioplot2(Hot_data)
 ```
 
 
+Load libraries and generate the data
+```{r}
+library('broom')
+library('dplyr')
+library('ggplot2')
+library('tidyr')
+
+set.seed(20160229)
+
+my_data = data.frame(
+    # dependent variable
+    dv=c(rnorm(1000), rnorm(1000, 0.5), rnorm(1000, 1), rnorm(1000, 1.5)),
+
+    # x-axis grouping variable
+    x_group=c(rep('a', 2000), rep('b', 2000)),
+
+    # variable to use to split the violins
+    m=c(rep('i', 1000), rep('j', 2000), rep('i', 1000))
+)
+```
+
+Get the group levels for the split variable
+
+```{r}
+splits = unique(my_data[['m']])
+```
+
+Calculate and scale group densities
+I'm rescaling the density curves so that they all have the same peak height and don't overlap. Edit the mutate() line if you want to have the density polygons be different sizes (e.g., scaled so that they show the relative amount of data in each group).
+```{r}
+pdat = my_data %>%
+    group_by(x_group, m) %>%
+    do(tidy(density(.[['dv']]))) %>%
+    rename(loc = x, dens = y) %>%
+    mutate(dens = 0.5 * dens / max(dens)) %>%
+    ungroup()
+```
+
+
+Calculate summary statistics in a separate dataframe
+
+If you need more summary statistics, add new variables to the summarise() call here, and add the additional variable names to the gather() call.
+```{r}
+sums = my_data %>%
+    group_by(x_group, m) %>%
+    summarise(lquart_loc = quantile(dv)[[2]],
+              uquart_loc = quantile(dv)[[4]]) %>%
+    ungroup() %>%
+    gather(segment, loc_sum, lquart_loc, uquart_loc)
+```
+
+Calculate the corresponding points on each group's density curve
+
+To do this, I'm taking the scaled density curves stored in pdat, then feeding them into the approx() function, plus the y-axis locations of the summary statistics (loc_sum), to get the corresponding x-axis values for the summary statistics.
+```{r}
+sums = left_join(pdat, sums, by=c('x_group', 'm')) %>%
+    group_by(x_group, m) %>%
+    do(data.frame(loc = unique(.$loc_sum),
+                  dens = approx(.$loc, .$dens, unique(.$loc_sum))[['y']])) %>%
+    ungroup()
+```
+
+Create a vector of offsets with each x-axis group's coordinate
+```{r}
+offsets = unique(my_data[['x_group']]) %>% {setNames(0:(length(.) - 1), .)}
+
+```
+
+Offset the densities and summary statistics
+Modify pdat and sums to add offset_dens columns, which are the density curve values offset by the x-axis group. Also, for the groups that are on the left side of the split violins, invert the densities
+
+```{r}
+pdat = pdat %>%
+    mutate(offset_dens = offsets[.[['x_group']]] + ifelse(.[['m']] == splits[1], -dens, dens))
+
+sums = sums %>%
+    mutate(offset = offsets[.[['x_group']]],
+           offset_dens = offset + ifelse(.[['m']] == splits[1], -dens, dens))
+```
+
+Plot
+```{r}
+ggplot(pdat, aes(offset_dens, loc, fill = m,
+                 group = interaction(pdat[['x_group']], pdat[['m']]))) +
+    geom_polygon() +
+    geom_segment(data=sums, aes(x = offset, y = loc,
+                                xend = offset_dens, yend = loc),
+                 inherit.aes=FALSE) +
+    scale_x_continuous(name = 'x_group',
+                       breaks = unname(offsets),
+                       labels = names(offsets)) +
+    ylab('dv')
+```
 
 
