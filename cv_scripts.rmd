@@ -8,7 +8,7 @@ output:
 ---
 
 Generate a Visual Basic Script that can convert xls and xlsx files into csv in local directory 
-xls files are notoriously difficult to handle in R, csv conver              bvby~7En*UtG%y~7En*UtG%y~7En*UtG%sion allows low memory
+xls files are notoriously difficult to handle in R, csv conver
 
 ```{r setup,}
 #setwd("D:/Dropbox/Aging BXD Study/D _ Metabolomics/D _ Protocol Optimization/CV Calcs")
@@ -129,25 +129,38 @@ primary_meta_names  <- c(meta_data, primary_names)
 #duplicated_colnames <- which(duplicated(primary_meta_names,fromLast = FALSE))
 #metab_data<-lapply(duplicated_colnames, function(x) metab_data[-x])
 
-
 duplicated_cols <- which(duplicated(primary_meta_names))
 filtered_metab_data <- metab_data %>% select(-duplicated_cols)
 filtered_primary_meta_names <- primary_meta_names[-duplicated_cols]
 final_metab_data <- filtered_metab_data %>% setnames(filtered_primary_meta_names)
 
 #Set up variables for the aov analysis
-
-counts <- as.matrix(log(metab[7]))
-#extraction  <- metab$extraction
-#mouse   <- metab$mouse
-#diet    <- metab$diet
-#sex     <- metab$sex
-#replicate <- metab$replicate
-  
+counts <- as.matrix(log(final_metab_data[7]))
 fit <- aov(formula = as.formula("counts ~ diet + replicate + extraction + sex"), data = filtered_metab_data)
-fit2 <- glm(formula = as.formula("counts ~ sex + diet + extraction + replicate"), data = metab)
+fit2 <- glm(formula = as.formula("counts ~ sex + diet + extraction + replicate"), data = filtered_metab_data)
 
+multi_aov <- function(x, data) {
+  counts <- as.matrix(log(x))
+  fit <- aov(formula = as.formula("counts ~ diet + replicate + extraction + sex"), data = filtered_metab_data)
+  fit_summary <- summary(fit)
+}
+
+multi_glm <- function(x, data) {
+  counts <- as.matrix(log(x))
+  fit <- glm(formula = as.formula("counts ~ diet + replicate + extraction + sex"), data = filtered_metab_data)
+  fit_summary <- summary(fit)
+}
+
+
+result_aov <- sapply(final_metab_data[7:8], function(x) multi_aov(x))
+result_glm <- sapply(final_metab_data[7:10], function(x) multi_glm(x))
+
+#Extract the coefficients from the GLM models
+result_glm[12,1:2]
+
+ncol(final_metab_data)
 Tukey.fit <- TukeyHSD(fit, conf.level = 0.95)
+
 
 #Run AOV using HEPlot package
 metab.mod <- lm(as.matrix(metab[7]) ~ sex + diet, data=metab)
@@ -164,30 +177,76 @@ plot(fit2, which = 1:6)
 #Pair wise test to see if gender and sex cohorts make a significant difference
 pairwise.t.test(as.matrix(metab[7]), g = sex ,p.adjust.method = "bonferroni")
 
+```
+
+
+Filter NH24 data and perform same analysis
+```{r}
 #Try the AOV on a smaller subset of the data for just the NH24 extraction
 NH24_data <- filter(final_metab_data,extraction == "NH24") %>% filter(sex == "F")
-counts <- as.matrix(log(NH24_data[7:329]))
-fit <- aov(formula = as.formula("counts ~ diet + replicate + mouse"), data = NH24_data)
 
-fit_summary <- summary(fit)
-fit_summary_table <- sapply(fit_summary[1:length(fit_summary)], function(x) cbind.data.frame(x))
+#fit <- aov(formula = as.formula("counts ~ diet + replicate + mouse"), data = NH24_data)
+#counts <- as.matrix(log(NH24_data[7:329]))
 
-NH24_f_value <- cbind.data.frame(fit_summary_table["F value",])
-NH24_f_value <- y[-4,]
-NH24_pr_f <- cbind.data.frame(fit_summary_table["Pr(>F)",])
-NH24_pr_f <- z[-4,]
+multi_aov <- function(x, data) {
+  counts <- as.matrix(log(x))
+  fit <- aov(formula = as.formula("counts ~ diet + replicate"), data = NH24_data)
+  fit_summary <- summary(fit)
+}
 
-row.names(NH24_f_value) <- c("diet", "replicate", "mouse")
-row.names(NH24_pr_f) <- c("diet", "replicate", "mouse")
+multi_glm <- function(x, data) {
+  counts <- as.matrix(log(x))
+  fit <- glm(formula = as.formula("counts ~ diet + replicate"), data = NH24_data)
+  fit_summary <- summary(fit)
+}
 
-NH24_pr_f_transpose <- t(NH24_pr_f)
+result_aov <- sapply(NH24_data[7:ncol(NH24_data)], function(x) multi_aov(x))
+result_glm <- sapply(NH24_data[7:ncol(NH24_data)], function(x) multi_glm(x))
 
-alpha <- 0.05
+glm_coefficients <- result_glm[12,1:ncol(result_glm)]
+x <- data.frame(glm_coefficients)
+x <- x[-1,]
+x <- select(x, contains('Std.'))
+y <- t(x)
+
+
+
+#Get a list of values that are significantly variation
+unlisted_fit_summary_table <- sapply(fit_summary[1:length(fit_summary)], function(x) unlist(cbind.data.frame(x)))
+
+#Fix Fit Table Names
+row.names(unlisted_fit_summary_table) <- gsub(x = row.names(unlisted_fit_summary_table),pattern = "1",replacement = "_diet")
+row.names(unlisted_fit_summary_table) <- gsub(x = row.names(unlisted_fit_summary_table),pattern = "2",replacement = "_replicate")
+row.names(unlisted_fit_summary_table) <- gsub(x = row.names(unlisted_fit_summary_table),pattern = "3",replacement = "_mouse")
+row.names(unlisted_fit_summary_table) <- gsub(x = row.names(unlisted_fit_summary_table),pattern = "4",replacement = "_residuals")
+
+
+#Plot Histogram of P-values
+hist(-log(1/unlisted_fit_summary_table["F value_diet",]))
+
+#Plot with Legend
+test <- -log(1/unlisted_fit_summary_table["F value_diet",])
+test_dat <- data.frame( x=test, Significant=test>7 )
+q <-  qplot(x,data=test_dat,geom="histogram",
+      fill=Significant, 
+      main = "1/log values F-values",
+      xlab = "-Log (F-value)",
+      ylab = ("Frequency")
+      )
+#Now that I have the portion significant marked I can 
+
+NH24_pr_f_transpose <- t(unlisted_fit_summary_table)
+NH24_pr_f_transpose_df <- data.frame(NH24_pr_f_transpose)
+NH24_pr_f_transpose_df <- add_rownames(NH24_pr_f_transpose_df, var = "rowname")
+
+diet_variant_metabolites <- filter(NH24_pr_f_transpose_df, NH24_pr_f_transpose_df$Pr..F._diet < 1e-6)
+alpha <- 0.05234
 n_tests <- nrow(NH24_pr_f_transpose)
 bonf_correction <- alpha/n_tests
 
 
 ```
+
 
 Generate Table to compare Chow and High Fat Diet metabolites
 Script for extracting just cohort subsets for convienceie use anywhere in the analysis
@@ -217,6 +276,29 @@ CD_mean <-as.numeric(lapply(CD_data[7:length(names(CD_data))], function(x) mean(
 HF_sd <-as.numeric(lapply(HF_data[7:length(names(HF_data))], function(x) sd((x))))
 CD_sd <-as.numeric(lapply(CD_data[7:length(names(CD_data))], function(x) sd((x))))
 
+CD_CV <-as.numeric (
+        lapply     ( CD_data[7:ncol(CD_data)], function(x) sd(x)/mean((x))*100 ))
+
+HF_CV <-as.numeric (
+        lapply     ( HF_data[7:ncol(HF_data)], function(x) sd(x)/mean((x))*100 ))
+
+NH24_CD_CV <-as.numeric (
+        lapply     ( filter(CD_data, CD_data$extraction == "NH24")[7:length(names(rep_1_data))], 
+        function(x) sd(x)/mean((x))*100 
+                    ))
+
+NH24_HF_CV <-as.numeric (
+        lapply     ( filter(HF_data, HF_data$extraction == "NH24")[7:length(names(rep_1_data))], 
+        function(x) sd(x)/mean((x))*100 
+                    ))
+
+NH24_CD_CV_1037_data <- filter(HF_data, HF_data$extraction == "NH24") %>% filter(mouse == "1037")
+NH24_CD_CV_1037_CV  <-  as.numeric (lapply(NH24_CD_CV_1037_data[7:ncol(NH24_CD_CV_1037_data)],function(x) sd(x)/mean((x))*100))
+
+
+Diet_CV <- cbind(HF_CV , NH24_HF_CV, NH24_CD_CV_1037_CV)
+
+
 Hot_CV  <- as.numeric(lapply(Hot_data[7:ncol(Hot_data)], function(x) sd(x)/mean((x))*100))
 H1_CV   <- as.numeric(lapply(H1_data[7:ncol(H1_data)], function(x) sd(x)/mean((x))*100))
 H24_CV  <- as.numeric(lapply(H24_data[7:ncol(H24_data)], function(x) sd(x)/mean((x))*100))
@@ -224,20 +306,12 @@ NH24_CV <- as.numeric(lapply(NH24_data[7:ncol(NH24_data)], function(x) sd(x)/mea
 Extraction_CV <- cbind(Hot_CV,H1_CV,H24_CV,NH24_CV)
 
 
-CD_CV <-as.numeric (
-        lapply     ( filter(CD_data, CD_data$extraction == "NH24")[7:length(names(rep_1_data))], 
-        function(x) sd(x)/mean((x))*100 
-                    ))
-
-HF_CV <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean((x))*100))
-Diet_CV <- cbind(CD_CV,HF_CV)
-
 rep_1_CV <-as.numeric(lapply(rep_1_data[7:length(names(rep_1_data))], function(x) sd(x)/mean((x))*100))
 rep_2_CV <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean((x))*100))
 Rep_cv <- cbind(rep_1_CV,rep_2_CV) 
 
 
-q <- ggplot(cbing(), aes(factor(variable), log(value)))
+q <- ggplot(cbind(), aes(factor(variable), log(value)))
 q + geom_violin() + geom_boxplot(width=.1) 
 # violin plot with median points
 
