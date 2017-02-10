@@ -10,7 +10,8 @@ output:
 Generate a Visual Basic Script that can convert xls and xlsx files into csv in local directory 
 xls files are notoriously difficult to handle in R, csv conver
 
-```{r setup,}
+```{r,, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE, include = FALSE)
 #setwd("D:/Dropbox/Aging BXD Study/D _ Metabolomics/D _ Protocol Optimization/CV Calcs")
 
 excel_script <- 
@@ -57,7 +58,7 @@ system(command = cmd_command)
 ```
 
 Install all the required dependcies
-```{r, message=FALSE, warning=FALSE, eval=FALSE}
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 install.packages("dplyr")
 install.packages("ggplot2")
 install.packages("plyr")
@@ -68,7 +69,7 @@ install.packages("splitstackshape")
 ```
 
 Initalize data handling dependencies
-```{r, message=FALSE, warning=FALSE}
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
 library(dplyr)
 library(ggplot2)
 library(plyr)
@@ -163,7 +164,7 @@ Tukey.fit <- TukeyHSD(fit, conf.level = 0.95)
 
 
 #Run AOV using HEPlot package
-metab.mod <- lm(as.matrix(metab[7]) ~ sex + diet, data=metab)
+metab.mod <- lm(as.matrix(final_metab_data[7]) ~ sex + diet, data=final_metab_data)
 Anova(metab.mod, test.statistic="Roy")
 
 #Get the Summary Table of the Fit
@@ -175,7 +176,7 @@ plot(fit,which = 1:2)
 plot(fit2, which = 1:6)
 
 #Pair wise test to see if gender and sex cohorts make a significant difference
-pairwise.t.test(as.matrix(metab[7]), g = sex ,p.adjust.method = "bonferroni")
+#pairwise.t.test(as.matrix(final_metab_data[7]), g = sex ,p.adjust.method = "bonferroni")
 
 ```
 
@@ -292,11 +293,13 @@ NH24_HF_CV <-as.numeric (
         function(x) sd(x)/mean((x))*100 
                     ))
 
-NH24_CD_CV_1037_data <- filter(HF_data, HF_data$extraction == "NH24") %>% filter(mouse == "1037")
+NH24_CD_CV_1037_data <- filter(HF_data, HF_data$mouse == "1037") %>% filter(extraction == "NH24")
+
 NH24_CD_CV_1037_CV  <-  as.numeric (lapply(NH24_CD_CV_1037_data[7:ncol(NH24_CD_CV_1037_data)],function(x) sd(x)/mean((x))*100))
 
 
 Diet_CV <- cbind(HF_CV , NH24_HF_CV, NH24_CD_CV_1037_CV)
+
 
 
 Hot_CV  <- as.numeric(lapply(Hot_data[7:ncol(Hot_data)], function(x) sd(x)/mean((x))*100))
@@ -310,12 +313,6 @@ rep_1_CV <-as.numeric(lapply(rep_1_data[7:length(names(rep_1_data))], function(x
 rep_2_CV <-as.numeric(lapply(rep_2_data[7:length(names(rep_2_data))], function(x) sd(x)/mean((x))*100))
 Rep_cv <- cbind(rep_1_CV,rep_2_CV) 
 
-
-q <- ggplot(cbind(), aes(factor(variable), log(value)))
-q + geom_violin() + geom_boxplot(width=.1) 
-# violin plot with median points
-
-vioplot2(Hot_data)
 ```
 
 
