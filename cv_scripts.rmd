@@ -68,7 +68,7 @@ install.packages("tidyr")
 install.packages("splitstackshape")
 ```
 
-Initalize data handling dependencies
+Load and Initalize data handling dependencies
 ```{r setup, message=FALSE, warning=FALSE, include=FALSE}
 library(dplyr)
 library(ggplot2)
@@ -82,6 +82,12 @@ library(heplots)
 library(sm)
 library(vioplot)
 ```
+
+Detach all the packes that are loaded from the CRAN
+```{r}
+lapply(paste('package:',names(sessionInfo()$otherPkgs),sep=""),detach,character.only=TRUE,unload=TRUE)
+```
+
 
 Import Annotated Files, Tranposed, all commas, spaces and semi colons removed in notepad++. 
 INSERT "index, extraction, mouse, diet, sex," to first row
@@ -109,8 +115,8 @@ Add indexes for replicaites using the mod function on the sample index
 #index_vector        <- cbind(index_vector, replicate_index)
 #names(index_vector) <- c("index", "replicate")
 
-metab_data <- merge(metab_data 
-                    %>% mutate(replicate  = paste("rep_", rep(c(1,2), times = dim(metab_data)[1]/2), sep = "")) 
+metab_data <- merge(metab_data
+                    %>% mutate(replicate  = paste("rep_", rep(c(1,2), times = dim(metab_data)[1]/2), sep = ""))
                     %>% select(index, replicate), metab_data, by = "index")
 
 #zou need to have unqiue values in the bz mere
@@ -329,7 +335,7 @@ lookup_ids <- read.table(file = "Data_Curated_Annotations_IDS.csv",
 HMDB_look_up_ids <- sapply(db_search_metabs, function(x) (filter(lookup_ids, name == x)) )
 HMDB_look_up_ids <- HMDB_look_up_ids["hmdb_id",]
 
-
+require(XML)
 HMDB_gene_search <- function(x) {
   #x <- HMDB_look_up_ids[1]
   hmdb_dir <- "~/Dropbox/Aging BXD Study/D _ Metabolomics/Y_hmdb_database/"  
@@ -338,7 +344,7 @@ HMDB_gene_search <- function(x) {
   xmlfile <- xmlParse(data_xml)
   xmltop <- xmlRoot(xmlfile) #gives content of root
   as.character(toString.XMLNode(xmltop[["protein_associations"]][["protein"]][["uniprot_id"]][["text"]]))
-
+  
 }
 
 #xmltop[["protein_associations"]][["protein"]][["uniprot_id"]]
@@ -359,7 +365,7 @@ biocLite("Mus.musculus")
 
 
 library(ggbio)
-library(Homo.sapiens)
+library(Mus.musculus)
 #load gene symbol : GRanges, one gene/row
 data(genesymbol, package = "biovizBase")
 #retrieve information of the gene of interest
