@@ -315,6 +315,63 @@ Rep_cv <- cbind(rep_1_CV,rep_2_CV)
 
 ```
 
+Do the HMDB look up on Metabolites list
+```{r}
+setwd("/Users/mohasan/Dropbox/Aging BXD Study/D _ Metabolomics/F _ Metabolomics Analysis Script/")
+db_search_metabs <- as.character(colnames(final_metab_data[10:20]))
 
+#Look for the HMDB Ids of metabolites
+lookup_ids <- read.table(file = "Data_Curated_Annotations_IDS.csv", 
+                         sep = ",", header = TRUE,
+                         stringsAsFactors = FALSE, 
+                         fill = TRUE)
+
+HMDB_look_up_ids <- sapply(db_search_metabs, function(x) (filter(lookup_ids, name == x)) )
+HMDB_look_up_ids <- HMDB_look_up_ids["hmdb_id",]
+
+
+HMDB_gene_search <- function(x) {
+  #x <- HMDB_look_up_ids[1]
+  hmdb_dir <- "~/Dropbox/Aging BXD Study/D _ Metabolomics/Y_hmdb_database/"  
+  data_xml <- paste(hmdb_dir, x, ".xml", sep = "")
+  
+  xmlfile <- xmlParse(data_xml)
+  xmltop <- xmlRoot(xmlfile) #gives content of root
+  as.character(toString.XMLNode(xmltop[["protein_associations"]][["protein"]][["uniprot_id"]][["text"]]))
+
+}
+
+#xmltop[["protein_associations"]][["protein"]][["uniprot_id"]]
+metab_gene_list <- sapply(HMDB_look_up_ids, function(x) HMDB_gene_search(x))
+metab_gene_list_print <- metab_gene_list
+names(metab_gene_list_print) <- NULL
+write.csv(metab_gene_list_print,file = "metab_gene_list.csv", quote = FALSE, row.names = FALSE)
+
+
+```
+
+
+
+```{r}
+## try http:// if https:// URLs are not supported
+source("https://bioconductor.org/biocLite.R")
+biocLite("Mus.musculus")
+
+
+library(ggbio)
+library(Homo.sapiens)
+#load gene symbol : GRanges, one gene/row
+data(genesymbol, package = "biovizBase")
+#retrieve information of the gene of interest
+wh <- genesymbol[c("BRCA1", "NBR1")]
+wh <- range(wh, ignore.strand = TRUE)
+#Plot the different transcripts  for our gene of interest
+p.txdb <- autoplot(Homo.sapiens, which = wh)
+p.txdb
+#Change inton geometry, use gap.geom
+autoplot(Homo.sapiens, which = wh, gap.geom = "chevron")
+
+
+```
 
 
