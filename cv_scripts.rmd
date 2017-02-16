@@ -104,21 +104,9 @@ metab_data <- Data_Curated_Annotations_transpose %>% dplyr::mutate_each_(., funs
 
 Add indexes for replicaites using the mod function on the sample index
 ```{r}
-#mod<-function(x,m){
-#    t1<-floor(x/m)
-#    return(x-t1*m)
-#}
-
-#index_vector        <- c(1:nrow(metab_data))
-#replicate_index     <- mod(metab_data$index,2)
-#replicate_index     <- as.data.frame(as.character(rev((replicate_index + 1))))
-#index_vector        <- cbind(index_vector, replicate_index)
-#names(index_vector) <- c("index", "replicate")
-
 metab_data <- merge(metab_data
                     %>% mutate(replicate  = paste("rep_", rep(c(1,2), times = dim(metab_data)[1]/2), sep = ""))
                     %>% select(index, replicate), metab_data, by = "index")
-
 #zou need to have unqiue values in the bz mere
 #can be done by selecting multiple columns
 ```
@@ -132,9 +120,6 @@ primary_names       <- Data_Annotations$Primary.Name
 meta_data           <- c("index","replicate","extraction","mouse","diet","sex")
 primary_meta_names  <- c(meta_data, primary_names)
 
-#names(metab_data)   <- primary_meta_names
-#duplicated_colnames <- which(duplicated(primary_meta_names,fromLast = FALSE))
-#metab_data<-lapply(duplicated_colnames, function(x) metab_data[-x])
 
 duplicated_cols <- which(duplicated(primary_meta_names))
 filtered_metab_data <- metab_data %>% select(-duplicated_cols)
@@ -324,7 +309,7 @@ Rep_cv <- cbind(rep_1_CV,rep_2_CV)
 Do the HMDB look up on Metabolites list
 ```{r}
 setwd("/Users/mohasan/Dropbox/Aging BXD Study/D _ Metabolomics/F _ Metabolomics Analysis Script/")
-db_search_metabs <- as.character(colnames(final_metab_data[10:20]))
+db_search_metabs <- as.character(colnames(final_metab_data[10:30]))
 
 #Look for the HMDB Ids of metabolites
 lookup_ids <- read.table(file = "Data_Curated_Annotations_IDS.csv", 
@@ -343,7 +328,9 @@ HMDB_gene_search <- function(x) {
   
   xmlfile <- xmlParse(data_xml)
   xmltop <- xmlRoot(xmlfile) #gives content of root
-  as.character(toString.XMLNode(xmltop[["protein_associations"]][["protein"]][["uniprot_id"]][["text"]]))
+  as.character(toString.XMLNode(xmltop[["protein_associations"]][["protein"]][["gene_name"]][["text"]]))
+  #as.character(toString.XMLNode(xmltop[["protein_associations"]][["protein"]][["uniprot_id"]][["text"]]))
+
   
 }
 
@@ -352,32 +339,108 @@ metab_gene_list <- sapply(HMDB_look_up_ids, function(x) HMDB_gene_search(x))
 metab_gene_list_print <- metab_gene_list
 names(metab_gene_list_print) <- NULL
 write.csv(metab_gene_list_print,file = "metab_gene_list.csv", quote = FALSE, row.names = FALSE)
+metab_gene_list_print <- stringr::str_trim(metab_gene_list_print)
 
 
+```
+
+Load Bioconductor Packages
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite("rtracklayer")
+
+
+library(ggbio)
+library(Mus.musculus)
+library(biovizBase)
+library(GenomicRanges)
+library(rtacklayer)
+#https://support.bioconductor.org/p/83349/
+# R Track Layer Fix if OpenSSL issue coming up
+
+library(geneRanges)
+library(Homo.sapiens)
 ```
 
 
 
 ```{r}
-## try http:// if https:// URLs are not supported
-source("https://bioconductor.org/biocLite.R")
-biocLite("Mus.musculus")
+geneRanges <- function(db, column="ENTREZID")
+{
+    g <- genes(db, columns=column)
+    col <- mcols(g)[[column]]
+    genes <- granges(g)[rep(seq_along(g), elementNROWS(col))]
+    mcols(genes)[[column]] <- as.character(unlist(col))
+    genes
+}
+
+splitColumnByOverlap <-function(query, subject, column="ENTREZID", ...)
+{
+    olaps <- findOverlaps(query, subject, ...)
+    f1 <- factor(subjectHits(olaps),
+                 levels=seq_len(subjectLength(olaps)))
+    splitAsList(mcols(query)[[column]][queryHits(olaps)], f1)
+}
 
 
-library(ggbio)
-library(Mus.musculus)
-#load gene symbol : GRanges, one gene/row
+gff_file_path <- "/Users/mohasan/Dropbox/Aging BXD Study/D _ Metabolomics/G _ genome ranges script/mm_gff3/Mus_musculus.GRCm38.87.gff3"
+gff <- import.gff(gff_file_path, "gff3")
+Mouse_genes <- GRanges(gff)
+
+Mouse_genes = geneRanges(Mus.musculus, column="SYMBOL")
+Mouse_genes <- sort(Mouse_genes)
+Mouse_genes <- keepStandardChromosomes(Mouse_genes)
+
+Mousedata("CRC", package = "biovizBase")
+head(sub)
+
+filt.ids <- metab_gene_list_print
+Metab_gene_data <- Human_genes[(elementMetadata(Human_genes)[,1] %in%  filt.ids)]
+
+
+p <- ggbio(trackWidth = 10, buffer = 7, radius = 10) + 
+     circle(Metab_gene_data, geom = "rect", color = "steelblue") + #somatic mutation
+     circle(hg19sub, geom = "ideo", fill = "gray70") +#Ideogram
+     circle(hg19sub, geom = "scale", size = 3) +#Scale
+     circle(hg19sub, geom = "text", aes(label = seqnames), vjust = 10, size = 3)#label
+
+p 
+
+q <- ggbio(trackWidth = 10, buffer = 5, radius = 10) + circle(hg19sub, geom = "ideo", fill = "gray70") +
+    circle(hg19sub, geom = "scale", size = 2) + circle(hg19sub, geom = "text", 
+    aes(label = seqnames), vjust= -2, size = 2) +
+    circle(Metab_gene_data, geom = "rect", color = "steelblue")
+q
+
+
+data(ideoCyto, package = "biovizBase") 
+autoplot(seqinfo(ideoCyto$hg19), layout = "karyogram")
+
+
+
+
+p.ideo <- Ideogram(genome = "hg19")
+p.ideo
+library(GenomicRanges)
+## special highlights instead of zoomin!
+p.ideo + xlim(GRanges("chr2", IRanges(1e8, 1e8+10000000)))
+
 data(genesymbol, package = "biovizBase")
-#retrieve information of the gene of interest
-wh <- genesymbol[c("BRCA1", "NBR1")]
+wh <- genesymbol[c("PGP", "ASL")]
 wh <- range(wh, ignore.strand = TRUE)
-#Plot the different transcripts  for our gene of interest
-p.txdb <- autoplot(Homo.sapiens, which = wh)
-p.txdb
-#Change inton geometry, use gap.geom
-autoplot(Homo.sapiens, which = wh, gap.geom = "chevron")
 
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+txdb <- TxDb.Mmusculus.UCSC.mm10.knownGene
+autoplot(txdb, which = wh)
 
+library(biovizBase)
+gr.txdb <- crunch(txdb, which = wh)
+## change column to 'model'
+colnames(values(gr.txdb))[4] <- "model"
+grl <- split(gr.txdb, gr.txdb$tx_id)
+## fake some randome names
+names(grl) <- sample(LETTERS, size = length(grl), replace = TRUE) grl
 ```
+
 
 
